@@ -1,0 +1,233 @@
+# =============================================================================
+# Projeto Waze: edge, fog e cloud
+# =============================================================================
+# Regra de ouro: cada caixa do diagrama é um nó, e o nó tem o mesmo nome aqui.
+# Um nó pode ter mais de um contêiner (ex.: broker + lógica em Python).
+#
+# Arquitetura (fog organizado HORIZONTALMENTE: um datacenter por região):
+#
+#   [ celulares-a ] --4G/5G--> [ fog-a ] --WAN--+
+#                                               +--> [ nuvem ]
+#   [ celulares-b ] --4G/5G--> [ fog-b ] --WAN--+
+#        EDGE                     FOG              CLOUD
+#
+# Os enlaces 4G/5G e WAN passam pelo Toxiproxy, controlado pela painel-api.
+# Painel da demonstração: http://localhost:8090  |  Grafana: http://localhost:3010
+# (portas diferentes das do projeto Fábrica: os dois podem rodar juntos)
+# =============================================================================
+
+name: waze
+
+services:
+
+  # ===========================================================================
+  # REGIÃO A
+  # ===========================================================================
+
+  # --- EDGE: os celulares dos motoristas da região A --------------------------
+  celulares-a:
+    build: ./celulares
+    environment:
+      REGIAO: a
+      NUM_CARROS: "12"
+      # A "rede 4G/5G" da região passa pelo Toxiproxy.
+      BROKER_HOST: toxiproxy
+      BROKER_PORT: "21883"
+      # Instrumentação da simulação (só para o painel), fora de banda.
+      VIZ_HOST: fog-a-broker
+    volumes:
+      - dados-celulares-a:/dados
+    depends_on:
+      - toxiproxy
+      - fog-a-broker
+    networks:
+      - rede_regiao_a   # fala com o fog da região (via Toxiproxy)
+      - rede_gerencia   # instrumentação para o painel
+
+  # --- FOG: nó fog-a = broker + processador ------------------------------------
+  # Redes e portas do nó são declaradas apenas no broker.
+  fog-a-broker:
+    image: eclipse-mosquitto:2.0.20
+    volumes:
+      - ./mosquitto/fog-a.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      - "9011:9001"     # WebSocket (ferramentas como o MQTT Explorer)
+    networks:
+      - rede_regiao_a   # recebe os celulares da região (via Toxiproxy)
+      - rede_wan        # fala com a nuvem (via Toxiproxy)
+      - rede_gerencia   # observado pelo painel (fora de banda)
+
+  fog-a:
+    build: ./fog
+    # Mesmo nó do broker: mesmo IP, conversa com ele por localhost.
+    network_mode: service:fog-a-broker
+    environment:
+      REGIAO: a
+      BROKER_HOST: localhost
+      JANELA_S: "10"
+      NUVEM_URL: http://toxiproxy:28000
+      LOTE_S: "30"
+    volumes:
+      - dados-fog-a:/dados
+    depends_on:
+      - fog-a-broker
+
+  # ===========================================================================
+  # REGIÃO B (mesma estrutura da região A)
+  # ===========================================================================
+
+  celulares-b:
+    build: ./celulares
+    environment:
+      REGIAO: b
+      NUM_CARROS: "12"
+      BROKER_HOST: toxiproxy
+      BROKER_PORT: "21884"
+      VIZ_HOST: fog-b-broker
+    volumes:
+      - dados-celulares-b:/dados
+    depends_on:
+      - toxiproxy
+      - fog-b-broker
+    networks:
+      - rede_regiao_b
+      - rede_gerencia
+
+  fog-b-broker:
+    image: eclipse-mosquitto:2.0.20
+    volumes:
+      - ./mosquitto/fog-b.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      - "9012:9001"
+    networks:
+      - rede_regiao_b
+      - rede_wan
+      - rede_gerencia
+
+  fog-b:
+    build: ./fog
+    network_mode: service:fog-b-broker
+    environment:
+      REGIAO: b
+      BROKER_HOST: localhost
+      JANELA_S: "10"
+      NUVEM_URL: http://toxiproxy:28000
+      LOTE_S: "30"
+    volumes:
+      - dados-fog-b:/dados
+    depends_on:
+      - fog-b-broker
+
+  # ===========================================================================
+  # CLOUD: datacenter distante
+  # ===========================================================================
+  nuvem:
+    build: ./nuvem
+    environment:
+      BANCO_URL: postgresql://nuvem:nuvem@nuvem-db:5432/nuvem
+    depends_on:
+      nuvem-db:
+        condition: service_healthy
+    networks:
+      # Não está na rede_wan: os fogs só chegam aqui através do Toxiproxy.
+      - rede_nuvem
+
+  nuvem-db:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_USER: nuvem
+      POSTGRES_PASSWORD: nuvem   # demonstração didática; em produção, segredo
+      POSTGRES_DB: nuvem
+    volumes:
+      - dados-nuvem:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "nuvem"]
+      interval: 2s
+      retries: 30
+    networks:
+      - rede_nuvem
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/waze.json
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3010:3000"
+    depends_on:
+      - nuvem-db
+    networks:
+      - rede_nuvem
+
+  # ===========================================================================
+  # REDE: Toxiproxy simula os enlaces que os experimentos manipulam
+  # ===========================================================================
+  #   celular_a  toxiproxy:21883 -> fog-a-broker:1883  (rede 4G/5G da região A)
+  #   celular_b  toxiproxy:21884 -> fog-b-broker:1883  (rede 4G/5G da região B)
+  #   wan        toxiproxy:28000 -> nuvem:8000         (fogs -> nuvem)
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.9.0
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
+    volumes:
+      - ./toxiproxy/toxiproxy.json:/config/toxiproxy.json:ro
+    networks:
+      - rede_regiao_a
+      - rede_regiao_b
+      - rede_wan
+      - rede_nuvem
+      - rede_gerencia
+
+  # ===========================================================================
+  # CONTROLE E VISUALIZAÇÃO DA DEMONSTRAÇÃO
+  # ===========================================================================
+  painel-api:
+    build: ./painel-api
+    environment:
+      TOXIPROXY_URL: http://toxiproxy:8474
+    ports:
+      - "8091:8000"     # opcional: permite controlar os enlaces com curl
+    depends_on:
+      - toxiproxy
+    networks:
+      - rede_gerencia
+
+  painel:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./painel:/usr/share/nginx/html:ro
+      - ./painel/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./painel/websocket.conf:/etc/nginx/websocket.conf:ro
+    ports:
+      - "8090:80"
+    depends_on:
+      - painel-api
+      - fog-a-broker
+      - fog-b-broker
+    networks:
+      - rede_gerencia
+
+# -----------------------------------------------------------------------------
+# Redes Docker imitando a rede física
+# -----------------------------------------------------------------------------
+# rede_regiao_a/b: rede de cada região (celulares + fog), isoladas entre si.
+# rede_wan: a internet entre os datacenters regionais e a nuvem.
+# rede_nuvem: rede interna do datacenter da nuvem (API, banco, Grafana).
+# rede_gerencia: gerência fora de banda (painel e instrumentação da simulação).
+networks:
+  rede_regiao_a:
+  rede_regiao_b:
+  rede_wan:
+  rede_nuvem:
+  rede_gerencia:
+
+volumes:
+  dados-celulares-a:
+  dados-celulares-b:
+  dados-fog-a:
+  dados-fog-b:
+  dados-nuvem:

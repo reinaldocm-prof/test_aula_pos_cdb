@@ -1,0 +1,17 @@
+# Fonte de dados do Grafana: o banco da nuvem (provisionada automaticamente).
+apiVersion: 1
+
+datasources:
+  - name: Nuvem (Postgres)
+    uid: nuvem-pg
+    type: grafana-postgresql-datasource
+    url: nuvem-db:5432
+    user: nuvem
+    isDefault: true
+    jsonData:
+      database: nuvem
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+    secureJsonData:
+      password: nuvem

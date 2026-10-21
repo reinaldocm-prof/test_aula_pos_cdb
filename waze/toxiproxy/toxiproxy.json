@@ -1,0 +1,20 @@
+[
+  {
+    "name": "celular_a",
+    "listen": "0.0.0.0:21883",
+    "upstream": "fog-a-broker:1883",
+    "enabled": true
+  },
+  {
+    "name": "celular_b",
+    "listen": "0.0.0.0:21884",
+    "upstream": "fog-b-broker:1883",
+    "enabled": true
+  },
+  {
+    "name": "wan",
+    "listen": "0.0.0.0:28000",
+    "upstream": "nuvem:8000",
+    "enabled": true
+  }
+]

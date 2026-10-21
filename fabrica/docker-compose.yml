@@ -1,0 +1,257 @@
+# =============================================================================
+# Projeto Fábrica Inteligente: edge, fog e cloud
+# =============================================================================
+# Regra de ouro: cada caixa do diagrama é um nó, e o nó tem o mesmo nome aqui.
+# Um nó pode ter mais de um contêiner (ex.: broker + lógica em Python).
+#
+# Arquitetura:
+#
+#   [ maquinas-linha1 ] --MQTT--> [ gateway-linha1 ] --LAN--+
+#                                                           +--> [ servidor-fabrica ] --WAN--> [ nuvem ]
+#   [ maquinas-linha2 ] --MQTT--> [ gateway-linha2 ] --LAN--+
+#         EDGE                    FOG (nível inferior)         FOG (nível superior)          CLOUD
+#
+# Os enlaces LAN e WAN passam pelo Toxiproxy, controlado pela painel-api.
+# Painel da demonstração: http://localhost:8080  |  Grafana: http://localhost:3000
+# =============================================================================
+
+name: fabrica
+
+services:
+
+  # ===========================================================================
+  # LINHA 1
+  # ===========================================================================
+
+  # --- FOG (nível inferior): nó gateway-linha1 = broker + agregador ----------
+  # Redes e portas do nó são declaradas apenas no broker.
+  gateway-linha1-broker:
+    image: eclipse-mosquitto:2.0.20
+    volumes:
+      - ./mosquitto/gateway-linha1.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      # WebSocket no host para o painel (visualização fora de banda).
+      - "9001:9001"
+    networks:
+      - rede_linha1     # fala com as máquinas da linha
+      - rede_fabrica    # fala com o servidor da fábrica (bridge)
+      - rede_gerencia   # observado pelo painel (fora de banda)
+
+  gateway-linha1:
+    build: ./gateway
+    # Mesmo nó do broker: mesmo IP, conversa com ele por localhost,
+    # como dois processos num mesmo equipamento físico.
+    network_mode: service:gateway-linha1-broker
+    environment:
+      LINHA: "1"
+      BROKER_HOST: localhost
+      JANELA_S: "5"
+    depends_on:
+      - gateway-linha1-broker
+
+  # --- EDGE: controladores embarcados das máquinas da linha 1 ----------------
+  # Cada máquina desliga sozinha ao superaquecer, sem depender da rede.
+  maquinas-linha1:
+    build: ./maquinas
+    environment:
+      LINHA: "1"
+      NUM_MAQUINAS: "3"
+      # A máquina só conhece o broker da própria linha.
+      BROKER_HOST: gateway-linha1-broker
+    depends_on:
+      - gateway-linha1-broker
+    networks:
+      - rede_linha1
+
+  # ===========================================================================
+  # LINHA 2 (mesma estrutura da linha 1)
+  # ===========================================================================
+
+  gateway-linha2-broker:
+    image: eclipse-mosquitto:2.0.20
+    volumes:
+      - ./mosquitto/gateway-linha2.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      - "9002:9001"
+    networks:
+      - rede_linha2     # fala com as máquinas da linha
+      - rede_fabrica    # fala com o servidor da fábrica (bridge)
+      - rede_gerencia   # observado pelo painel (fora de banda)
+
+  gateway-linha2:
+    build: ./gateway
+    network_mode: service:gateway-linha2-broker
+    environment:
+      LINHA: "2"
+      BROKER_HOST: localhost
+      JANELA_S: "5"
+    depends_on:
+      - gateway-linha2-broker
+
+  maquinas-linha2:
+    build: ./maquinas
+    environment:
+      LINHA: "2"
+      NUM_MAQUINAS: "3"
+      BROKER_HOST: gateway-linha2-broker
+    depends_on:
+      - gateway-linha2-broker
+    networks:
+      - rede_linha2
+
+  # ===========================================================================
+  # FOG (nível superior): nó servidor-fabrica = broker + coordenador
+  # ===========================================================================
+  servidor-fabrica-broker:
+    image: eclipse-mosquitto:2.0.20
+    volumes:
+      - ./mosquitto/servidor-fabrica.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      - "9003:9001"
+    networks:
+      - rede_fabrica    # fala com os gateways (bridges)
+      - rede_wan        # fala com a nuvem (lotes HTTP, via Toxiproxy)
+      - rede_gerencia   # observado pelo painel (fora de banda)
+
+  servidor-fabrica:
+    build: ./servidor-fabrica
+    network_mode: service:servidor-fabrica-broker
+    environment:
+      BROKER_HOST: localhost
+      # Limite de demanda contratado (cada linha consome ~50 kW em operação normal).
+      LIMITE_DEMANDA_KW: "110"
+      # Prioridade: a primeira linha é a mais importante; a última é cortada antes.
+      PRIORIDADE_LINHAS: "1,2"
+      # Store-and-forward: lotes à nuvem.
+      # Passa pelo Toxiproxy, que simula a WAN (latência, banda, quedas).
+      NUVEM_URL: http://toxiproxy:28000
+      LOTE_S: "30"
+    volumes:
+      # Histórico local e fila de envio sobrevivem a reinícios do contêiner.
+      - dados-servidor-fabrica:/dados
+    depends_on:
+      - servidor-fabrica-broker
+
+  # ===========================================================================
+  # CLOUD: datacenter remoto
+  # ===========================================================================
+  # nuvem: API que recebe os lotes do servidor da fábrica.
+  nuvem:
+    build: ./nuvem
+    environment:
+      BANCO_URL: postgresql://nuvem:nuvem@nuvem-db:5432/nuvem
+    depends_on:
+      nuvem-db:
+        condition: service_healthy
+    networks:
+      # Não está na rede_wan: os lotes só chegam através do Toxiproxy.
+      - rede_nuvem      # rede interna do datacenter
+
+  # nuvem-db: histórico completo (Postgres, lido pelo Grafana).
+  nuvem-db:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_USER: nuvem
+      POSTGRES_PASSWORD: nuvem   # demonstração didática; em produção, segredo
+      POSTGRES_DB: nuvem
+    volumes:
+      - dados-nuvem:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "nuvem"]
+      interval: 2s
+      retries: 30
+    networks:
+      - rede_nuvem
+
+  # grafana: dashboard da nuvem, já provisionado (sem login).
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/fabrica.json
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - nuvem-db
+    networks:
+      - rede_nuvem
+
+  # ===========================================================================
+  # REDE: Toxiproxy simula os enlaces que os experimentos manipulam
+  # ===========================================================================
+  #   lan_linha1  toxiproxy:21883 -> servidor-fabrica-broker:1883  (bridge da linha 1)
+  #   lan_linha2  toxiproxy:21884 -> servidor-fabrica-broker:1883  (bridge da linha 2)
+  #   wan         toxiproxy:28000 -> nuvem:8000                    (lotes HTTP)
+  # Máquina -> gateway não passa por aqui: é a rede local da linha.
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.9.0
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
+    volumes:
+      - ./toxiproxy/toxiproxy.json:/config/toxiproxy.json:ro
+    networks:
+      - rede_fabrica    # lado dos gateways e do servidor
+      - rede_wan        # lado da fábrica, na WAN
+      - rede_nuvem      # lado do datacenter
+      - rede_gerencia   # API de controle (porta 8474)
+
+  # ===========================================================================
+  # CONTROLE DA DEMONSTRAÇÃO
+  # ===========================================================================
+  # painel-api: traduz os botões do painel em comandos para o Toxiproxy
+  # (a API do Toxiproxy não aceita chamadas diretas do navegador: sem CORS).
+  painel-api:
+    build: ./painel-api
+    environment:
+      TOXIPROXY_URL: http://toxiproxy:8474
+    ports:
+      - "8081:8000"     # opcional: permite controlar os enlaces com curl
+    depends_on:
+      - toxiproxy
+    networks:
+      - rede_gerencia
+
+  # painel: página da demonstração. O nginx serve a página e encaminha
+  #   /api/...   -> painel-api
+  #   /mqtt/...  -> WebSocket de cada broker (visualização fora de banda)
+  painel:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./painel:/usr/share/nginx/html:ro
+      - ./painel/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./painel/websocket.conf:/etc/nginx/websocket.conf:ro
+    ports:
+      - "8080:80"
+    depends_on:
+      - painel-api
+      - gateway-linha1-broker
+      - gateway-linha2-broker
+      - servidor-fabrica-broker
+    networks:
+      - rede_gerencia
+
+# -----------------------------------------------------------------------------
+# Redes Docker imitando a rede física
+# -----------------------------------------------------------------------------
+# Cada linha tem sua rede local, isolada das outras: a máquina da linha 1
+# não enxerga nada da linha 2, e nenhuma máquina tem rota para a nuvem.
+# rede_fabrica: LAN da fábrica, onde os gateways falam com o servidor.
+# rede_wan: a internet entre a fábrica e o datacenter.
+# rede_nuvem: rede interna do datacenter (API, banco, Grafana).
+# rede_gerencia: rede de gerência fora de banda (painel observa os brokers e
+#                controla o Toxiproxy sem passar pelos enlaces dos experimentos).
+networks:
+  rede_linha1:
+  rede_linha2:
+  rede_fabrica:
+  rede_wan:
+  rede_nuvem:
+  rede_gerencia:
+
+volumes:
+  dados-servidor-fabrica:
+  dados-nuvem:

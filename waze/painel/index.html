@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Painel do Waze</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="painel.css">
+</head>
+<body>
+
+<header>
+  <h1>Waze <span>edge · fog · cloud</span></h1>
+  <div class="conexoes">
+    <span class="con" id="con-a">região A</span>
+    <span class="con" id="con-b">região B</span>
+    <span class="con" id="con-api">controle</span>
+    <a id="link-grafana" target="_blank" rel="noopener">Grafana ↗</a>
+  </div>
+</header>
+
+<main>
+  <!-- Onde decidir + ferramentas de disparo -->
+  <section id="modos">
+    <div class="modo">
+      <span class="rotulo-modo">Alerta de acidente decidido no</span>
+      <div class="seletor" data-chave="acidente">
+        <button data-valor="fog">fog</button><button data-valor="nuvem">nuvem</button>
+      </div>
+    </div>
+    <div class="medicoes">
+      <span class="rotulo-modo">Último alerta de acidente: report → carros avisados</span>
+      <div><span id="lat-fog">fog —</span><span id="lat-nuvem">nuvem —</span></div>
+    </div>
+    <div class="modo">
+      <span class="rotulo-modo">Clique no mapa para provocar</span>
+      <div class="seletor" id="ferramentas">
+        <button data-ferramenta="acidente">🚧 Acidente</button><button data-ferramenta="lentidao">🐢 Lentidão</button><button data-ferramenta="tunel">🚇 Túnel (clique num carro)</button>
+      </div>
+    </div>
+    <button id="limpar">Limpar ocorrências</button>
+    <div id="aviso-modo"></div>
+  </section>
+
+  <!-- Mapas: o que acontece nas ruas (verdade de campo) + o que o fog concluiu (cores) -->
+  <section id="mapas">
+    <div class="mapa-regiao" data-regiao="a">
+      <div class="titulo-mapa"><b>Região A</b> <span>cores = estado calculado pelo <b>fog-a</b></span></div>
+      <svg class="mapa" id="mapa-a" viewBox="0 0 470 240"></svg>
+    </div>
+    <div class="mapa-regiao" data-regiao="b">
+      <div class="titulo-mapa"><b>Região B</b> <span>cores = estado calculado pelo <b>fog-b</b></span></div>
+      <svg class="mapa" id="mapa-b" viewBox="0 0 470 240"></svg>
+    </div>
+  </section>
+  <div class="legenda legenda-mapa">
+    <span><i class="via"></i>sem carros na janela</span>
+    <span><i class="via livre"></i>livre</span>
+    <span><i class="via lento"></i>lento</span>
+    <span><i class="via congestionado"></i>congestionado</span>
+    <span><i class="carro-l"></i>carro com sinal</span>
+    <span><i class="carro-l sem"></i>sem sinal</span>
+    <span>🚧 acidente · 🐢 lentidão (o que de fato acontece na rua)</span>
+  </div>
+
+  <!-- Topologia: celulares → fog → nuvem ← fog ← celulares -->
+  <section id="topologia">
+    <svg id="enlaces" aria-hidden="true"><g id="linhas-enlace"></g><g id="pontos"></g><g id="rotulos"></g></svg>
+    <div class="no" id="no-cel-a">
+      <h3>celulares-a <small>EDGE</small></h3>
+      <div class="kv"><span>carros</span><b class="n-carros">—</b></div>
+      <div class="kv"><span>sem sinal</span><b class="n-sem-sinal">0</b></div>
+      <div class="kv"><span>desvios</span><b class="n-desvios">0</b></div>
+    </div>
+    <div class="no" id="no-fog-a">
+      <h3>fog-a <small>FOG</small></h3>
+      <div class="kv"><span>entrou (janela)</span><b class="f-in">—</b></div>
+      <div class="kv"><span>saiu (janela)</span><b class="f-out">—</b></div>
+      <div class="kv"><span>congestionados</span><b class="f-cong">—</b></div>
+      <div class="kv"><span>fila p/ nuvem</span><b class="f-fila">0</b></div>
+    </div>
+    <div class="no" id="no-nuvem">
+      <h3>nuvem <small>CLOUD</small></h3>
+      <div class="kv"><span>último lote</span><b id="nv-ultimo">—</b></div>
+      <div class="kv"><span>itens recebidos</span><b id="nv-total">0</b></div>
+      <a class="botao-link" id="nv-grafana" target="_blank" rel="noopener">Histórico no Grafana ↗</a>
+    </div>
+    <div class="no" id="no-fog-b">
+      <h3>fog-b <small>FOG</small></h3>
+      <div class="kv"><span>entrou (janela)</span><b class="f-in">—</b></div>
+      <div class="kv"><span>saiu (janela)</span><b class="f-out">—</b></div>
+      <div class="kv"><span>congestionados</span><b class="f-cong">—</b></div>
+      <div class="kv"><span>fila p/ nuvem</span><b class="f-fila">0</b></div>
+    </div>
+    <div class="no" id="no-cel-b">
+      <h3>celulares-b <small>EDGE</small></h3>
+      <div class="kv"><span>carros</span><b class="n-carros">—</b></div>
+      <div class="kv"><span>sem sinal</span><b class="n-sem-sinal">0</b></div>
+      <div class="kv"><span>desvios</span><b class="n-desvios">0</b></div>
+    </div>
+  </section>
+
+  <section id="inferior">
+    <div class="cartao" id="rede">
+      <div class="cartao-topo">
+        <h3>Enlaces de rede <small>(Toxiproxy)</small></h3>
+        <button id="restaurar">Restaurar padrão</button>
+      </div>
+      <table>
+        <thead><tr><th>Enlace</th><th>Estado</th><th>RTT</th><th>Banda</th></tr></thead>
+        <tbody id="tabela-enlaces"></tbody>
+      </table>
+      <div class="legenda">
+        <span><i class="p posicao"></i>posição</span>
+        <span><i class="p report"></i>report</span>
+        <span><i class="p alerta"></i>alerta</span>
+        <span><i class="p estado"></i>estado / rastro</span>
+        <span><i class="p lote"></i>lote</span>
+      </div>
+    </div>
+    <div class="cartao" id="eventos">
+      <h3>Eventos</h3>
+      <ol id="log"></ol>
+    </div>
+  </section>
+</main>
+
+<script src="vendor/mqtt.min.js"></script>
+<script src="painel.js"></script>
+</body>
+</html>

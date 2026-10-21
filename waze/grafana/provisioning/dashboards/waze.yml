@@ -1,0 +1,9 @@
+# Carrega os dashboards da pasta /var/lib/grafana/dashboards.
+apiVersion: 1
+
+providers:
+  - name: waze
+    type: file
+    disableDeletion: true
+    options:
+      path: /var/lib/grafana/dashboards

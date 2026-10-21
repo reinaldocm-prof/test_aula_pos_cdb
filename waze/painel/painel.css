@@ -1,0 +1,182 @@
+/* Painel do Waze: pensado para compartilhamento de tela (fontes grandes, alto contraste). */
+
+:root {
+  --fundo: #0f1419;
+  --cartao: #1a2129;
+  --borda: #2c3642;
+  --texto: #e6edf3;
+  --fraco: #8b98a5;
+  --verde: #3fb950;
+  --amarelo: #d29922;
+  --vermelho: #f85149;
+  --azul: #58a6ff;
+  --laranja: #ff9e40;
+  --roxo: #bc8cff;
+  --cinza: #6e7681;
+  --l1: #58a6ff;
+  --l2: #39c5bb;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--fundo);
+  color: var(--texto);
+  font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+button {
+  font: inherit;
+  font-size: 13px;
+  color: var(--texto);
+  background: #263140;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+button:hover { background: #304056; }
+button.ativo { background: var(--laranja); color: #1a1a1a; border-color: var(--laranja); }
+
+select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--texto);
+  background: #263140;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  padding: 3px 6px;
+}
+
+/* ---------------------------------------------------------------- cabeçalho */
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--borda);
+}
+header h1 { margin: 0; font-size: 22px; }
+header h1 span { color: var(--fraco); font-weight: 400; font-size: 16px; margin-left: 8px; }
+.conexoes { display: flex; gap: 10px; align-items: center; font-size: 13px; }
+.con { color: var(--fraco); }
+.con::before { content: "●"; color: var(--vermelho); margin-right: 4px; }
+.con.ok::before { color: var(--verde); }
+.conexoes a { color: var(--azul); }
+
+main { padding: 14px 20px; }
+
+/* ---------------------------------------------------------------- onde decidir */
+#modos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 28px;
+  background: var(--cartao);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 8px 14px;
+  margin-bottom: 14px;
+}
+.modo, .medicoes { display: flex; flex-direction: column; gap: 3px; }
+.rotulo-modo { color: var(--fraco); font-size: 12px; }
+.seletor { display: flex; }
+.seletor button { border-radius: 0; font-size: 14px; padding: 4px 14px; }
+.seletor button:first-child { border-radius: 6px 0 0 6px; }
+.seletor button:last-child { border-radius: 0 6px 6px 0; }
+.seletor button.escolhido { background: var(--azul); color: #0b1520; border-color: var(--azul); font-weight: 600; }
+.seletor button.escolhido.longe { background: var(--laranja); border-color: var(--laranja); }
+.medicoes div { display: flex; gap: 16px; font-variant-numeric: tabular-nums; font-size: 14px; }
+.medicoes span.recente { color: var(--laranja); font-weight: 700; }
+#aviso-modo { flex: 1; min-width: 260px; color: var(--amarelo); font-size: 13px; }
+
+/* ---------------------------------------------------------------- mapas */
+#ferramentas button.escolhido { background: var(--laranja); border-color: var(--laranja); color: #1a1a1a; }
+#limpar { align-self: flex-end; }
+
+#mapas { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.mapa-regiao { background: var(--cartao); border: 1px solid var(--borda); border-radius: 8px; padding: 8px 10px; }
+.titulo-mapa { font-size: 15px; margin-bottom: 4px; }
+.titulo-mapa span { color: var(--fraco); font-size: 12px; margin-left: 8px; }
+.mapa { width: 100%; height: auto; display: block; background: #121920; border-radius: 6px; }
+
+.via { stroke-linecap: round; stroke-width: 12; stroke: #3d4a58; transition: stroke .4s; }
+.via.livre { stroke: #2e7d46; }
+.via.lento { stroke: var(--amarelo); }
+.via.congestionado { stroke: var(--vermelho); }
+.via.piscar { animation: piscar 1.2s ease-out 2; }
+@keyframes piscar { 0%, 100% { stroke-width: 12; } 50% { stroke-width: 20; } }
+.alvo-clique { stroke: transparent; stroke-width: 26; cursor: crosshair; pointer-events: stroke; }
+.nome-trecho { fill: var(--fraco); font-size: 10px; text-anchor: middle; pointer-events: none; }
+.cruzamento { fill: #1d2630; }
+.ocorrencia { font-size: 16px; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+
+.carro { transition: transform .5s linear; cursor: pointer; }
+.carro circle { fill: var(--azul); stroke: #0b1520; stroke-width: 1.5; }
+.carro.sem-sinal circle { fill: var(--cinza); stroke: var(--texto); stroke-dasharray: 2 2; }
+.carro text { fill: var(--texto); font-size: 9px; text-anchor: middle; pointer-events: none; }
+.carro .onda { fill: none; stroke: var(--laranja); stroke-width: 2; opacity: 0; }
+.carro.avisado .onda { animation: onda 1s ease-out; }
+@keyframes onda { 0% { r: 6; opacity: 1; } 100% { r: 22; opacity: 0; } }
+
+.legenda-mapa { margin: 6px 2px 0; }
+i.via { display: inline-block; width: 22px; height: 6px; border-radius: 3px; vertical-align: 2px; margin-right: 5px; background: #3d4a58; }
+i.via.livre { background: #2e7d46; }
+i.via.lento { background: var(--amarelo); }
+i.via.congestionado { background: var(--vermelho); }
+i.carro-l { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--azul); margin-right: 5px; vertical-align: -1px; }
+i.carro-l.sem { background: var(--cinza); border: 1px dashed var(--texto); }
+
+/* ---------------------------------------------------------------- topologia */
+#topologia {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 70px;
+  margin-top: 16px;
+}
+#enlaces { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.no { background: var(--cartao); border: 1px solid var(--borda); border-radius: 8px; padding: 8px 12px; }
+.no h3 { margin: 0 0 4px; font-size: 14px; font-family: ui-monospace, monospace; }
+.no h3 small { color: var(--fraco); font-family: system-ui, sans-serif; font-size: 11px; margin-left: 6px; }
+#no-nuvem { border-color: var(--roxo); }
+#no-fog-a, #no-fog-b { border-color: #3a6b8f; }
+.kv { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 1px 0; }
+.kv span { color: var(--fraco); }
+.kv b { font-variant-numeric: tabular-nums; }
+.botao-link { display: block; margin-top: 6px; text-align: center; color: var(--azul); font-size: 13px; }
+
+.enlace { stroke: #4a5868; stroke-width: 3; fill: none; }
+.enlace.fora { stroke: var(--vermelho); stroke-dasharray: 8 6; }
+.rotulo-enlace { fill: var(--fraco); font-size: 11px; text-anchor: middle; paint-order: stroke; stroke: var(--fundo); stroke-width: 5px; stroke-linejoin: round; }
+.rotulo-enlace.nome { fill: var(--texto); font-weight: 600; }
+.rotulo-enlace.fora { fill: var(--vermelho); font-weight: 700; }
+
+.p { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.posicao { fill: var(--cinza); background: var(--cinza); }
+.report { fill: var(--vermelho); background: var(--vermelho); }
+.alerta { fill: var(--laranja); background: var(--laranja); }
+.estado { fill: var(--azul); background: var(--azul); }
+.lote { fill: var(--roxo); background: var(--roxo); }
+
+/* ---------------------------------------------------------------- parte de baixo */
+#inferior { display: grid; grid-template-columns: 1fr 1.3fr; gap: 16px; margin-top: 18px; }
+.cartao { background: var(--cartao); border: 1px solid var(--borda); border-radius: 8px; padding: 10px 14px; }
+.cartao h3 { margin: 0 0 8px; font-size: 15px; }
+.cartao h3 small { color: var(--fraco); font-weight: 400; }
+.cartao-topo { display: flex; justify-content: space-between; align-items: center; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: var(--fraco); font-weight: 400; padding: 4px; }
+td { padding: 4px; border-top: 1px solid var(--borda); }
+td small { color: var(--fraco); display: block; }
+.legenda { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--fraco); }
+
+#log { list-style: none; margin: 0; padding: 0; max-height: 210px; overflow-y: auto; font-size: 13px; }
+#log li { padding: 3px 0; border-bottom: 1px solid #222b35; }
+#log time { color: var(--fraco); font-variant-numeric: tabular-nums; margin-right: 8px; }
+#log .camada { display: inline-block; min-width: 46px; font-size: 11px; color: var(--fraco); }
+#log li.aviso { color: var(--amarelo); }
+#log li.erro { color: var(--vermelho); }
+#log li.decisao { color: var(--laranja); }
+#log li.ok { color: var(--verde); }

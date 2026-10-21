@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Painel da Fábrica</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="painel.css">
+</head>
+<body>
+
+<header>
+  <h1>Fábrica Inteligente <span>edge · fog · cloud</span></h1>
+  <div class="conexoes">
+    <span class="con" id="con-linha1">linha 1</span>
+    <span class="con" id="con-linha2">linha 2</span>
+    <span class="con" id="con-servidor">servidor</span>
+    <span class="con" id="con-api">controle</span>
+    <a id="link-grafana" target="_blank" rel="noopener">Grafana ↗</a>
+  </div>
+</header>
+
+<main>
+  <!-- Onde decidir: move a decisão entre as camadas -->
+  <section id="modos">
+    <div class="modo">
+      <span class="rotulo-modo">Desligamento por superaquecimento decidido no</span>
+      <div class="seletor" data-chave="superaquecimento">
+        <button data-valor="edge">edge</button><button data-valor="servidor">servidor</button><button data-valor="nuvem">nuvem</button>
+      </div>
+    </div>
+    <div class="modo">
+      <span class="rotulo-modo">Controle de demanda decidido no</span>
+      <div class="seletor" data-chave="demanda">
+        <button data-valor="servidor">servidor</button><button data-valor="nuvem">nuvem</button>
+      </div>
+    </div>
+    <div class="medicoes">
+      <span class="rotulo-modo">Último desligamento por superaquecimento</span>
+      <div><span id="lat-edge">edge —</span><span id="lat-servidor">servidor —</span><span id="lat-nuvem">nuvem —</span></div>
+    </div>
+    <div id="aviso-modo"></div>
+  </section>
+
+  <!-- Topologia: mesma disposição do diagrama, da esquerda (edge) para a direita (cloud) -->
+  <section id="topologia">
+    <svg id="enlaces" aria-hidden="true">
+      <g id="linhas-enlace"></g>
+      <g id="pontos"></g>
+      <g id="rotulos"></g>
+    </svg>
+
+    <div class="coluna">
+      <h2>EDGE <small>controlador de cada máquina</small></h2>
+      <div class="grupo-linha" id="maq-l1" data-linha="1">
+        <div class="titulo-linha">Linha 1 <span class="prio">prioridade alta</span></div>
+        <div class="maquinas"></div>
+        <div class="acoes">
+          <button class="pico">⚡ Pico de consumo</button>
+          <button class="religar">🔧 Reparar linha</button>
+        </div>
+      </div>
+      <div class="grupo-linha" id="maq-l2" data-linha="2">
+        <div class="titulo-linha">Linha 2 <span class="prio">prioridade baixa</span></div>
+        <div class="maquinas"></div>
+        <div class="acoes">
+          <button class="pico">⚡ Pico de consumo</button>
+          <button class="religar">🔧 Reparar linha</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="coluna">
+      <h2>FOG <small>nível inferior · gateway da linha</small></h2>
+      <div class="no gateway" id="gw-l1" data-linha="1">
+        <h3>gateway-linha1</h3>
+        <div class="kv"><span>consumo da linha</span><b class="g-kw">—</b></div>
+        <div class="kv"><span>entrou (janela)</span><b class="g-in">—</b></div>
+        <div class="kv"><span>saiu (janela)</span><b class="g-out">—</b></div>
+        <div class="destaque g-reducao">—</div>
+      </div>
+      <div class="no gateway" id="gw-l2" data-linha="2">
+        <h3>gateway-linha2</h3>
+        <div class="kv"><span>consumo da linha</span><b class="g-kw">—</b></div>
+        <div class="kv"><span>entrou (janela)</span><b class="g-in">—</b></div>
+        <div class="kv"><span>saiu (janela)</span><b class="g-out">—</b></div>
+        <div class="destaque g-reducao">—</div>
+      </div>
+    </div>
+
+    <div class="coluna">
+      <h2>FOG <small>nível superior · servidor da fábrica</small></h2>
+      <div class="no servidor" id="srv">
+        <h3>servidor-fabrica</h3>
+        <div class="rotulo">Demanda de energia</div>
+        <div class="medidor">
+          <div class="seg l1" id="dem-l1"></div><div class="seg l2" id="dem-l2"></div>
+          <div class="limite" id="dem-limite"></div>
+        </div>
+        <div class="demanda-texto"><b id="dem-total">—</b> / <span id="dem-max">—</span> kW</div>
+        <div id="dem-acima"></div>
+        <div id="dem-reduzidas"></div>
+        <div class="kv"><span>fila para a nuvem</span><b id="srv-fila">0 itens</b></div>
+        <div class="rotulo">Último alerta recebido</div>
+        <div class="ultimo-alerta" id="srv-alerta">—</div>
+      </div>
+    </div>
+
+    <div class="coluna">
+      <h2>CLOUD <small>datacenter remoto</small></h2>
+      <div class="no nuvem" id="nuvem">
+        <h3>nuvem</h3>
+        <div class="kv"><span>último lote</span><b id="nv-ultimo">—</b></div>
+        <div class="kv"><span>itens no lote</span><b id="nv-itens">—</b></div>
+        <div class="kv"><span>itens recebidos</span><b id="nv-total">0</b></div>
+        <a class="botao-link" id="nv-grafana" target="_blank" rel="noopener">Abrir histórico no Grafana ↗</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="inferior">
+    <div class="cartao" id="rede">
+      <div class="cartao-topo">
+        <h3>Enlaces de rede <small>(Toxiproxy)</small></h3>
+        <button id="restaurar">Restaurar padrão</button>
+      </div>
+      <table>
+        <thead><tr><th>Enlace</th><th>Estado</th><th>RTT</th><th>Banda</th></tr></thead>
+        <tbody id="tabela-enlaces"></tbody>
+      </table>
+      <div class="legenda">
+        <span><i class="p telemetria"></i>telemetria</span>
+        <span><i class="p resumo"></i>resumo</span>
+        <span><i class="p alerta"></i>alerta</span>
+        <span><i class="p comando"></i>comando</span>
+        <span><i class="p lote"></i>lote</span>
+      </div>
+    </div>
+    <div class="cartao" id="eventos">
+      <h3>Eventos</h3>
+      <ol id="log"></ol>
+    </div>
+  </section>
+</main>
+
+<template id="tpl-maquina">
+  <div class="maquina ligada">
+    <div class="m-topo"><b class="m-id"></b><span class="m-estado">—</span></div>
+    <div class="termometro"><div class="nivel"></div><i class="marca m90"></i><i class="marca m110"></i></div>
+    <div class="m-valores"><span class="m-temp">—</span> °C · <span class="m-kw">—</span> kW</div>
+    <div class="m-decisao"></div>
+    <button class="fogo" title="Simular falha de refrigeração">🔥 Falha</button>
+  </div>
+</template>
+
+<script src="vendor/mqtt.min.js"></script>
+<script src="painel.js"></script>
+</body>
+</html>
