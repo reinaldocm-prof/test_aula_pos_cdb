@@ -1,0 +1,29 @@
+{
+  // Ambiente para rodar as demonstrações no GitHub Codespaces, sem instalar nada.
+  // Depois que o Codespace abrir, no terminal:
+  //   cd fabrica && docker compose up -d --build
+  //   cd waze    && docker compose up -d --build
+  "name": "Demonstrações edge, fog e cloud",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  // Os dois projetos juntos usam 26 contêineres: peça uma máquina de 4 núcleos.
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb"
+  },
+  "forwardPorts": [8080, 3000, 8090, 3010],
+  "portsAttributes": {
+    "8080": { "label": "Fábrica: painel", "onAutoForward": "notify" },
+    "3000": { "label": "Fábrica: Grafana" },
+    "8090": { "label": "Waze: painel", "onAutoForward": "notify" },
+    "3010": { "label": "Waze: Grafana" }
+  },
+  "otherPortsAttributes": { "onAutoForward": "ignore" },
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-azuretools.vscode-docker", "ms-python.python"]
+    }
+  }
+}
